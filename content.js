@@ -123,6 +123,18 @@
     return "";
   }
 
+  function getCreatorCode(li) {
+    const ps = li.querySelectorAll("p, span, div");
+    for (let i = 0; i < ps.length; i++) {
+      const txt = (ps[i].textContent || "").trim();
+      if (txt.toUpperCase().startsWith("CODE:")) {
+        const code = txt.substring(5).trim().toUpperCase();
+        if (code) return code;
+      }
+    }
+    return "";
+  }
+
   function getUsername(li) {
     const isIgnored = (txt) => {
       const lower = txt.toLowerCase();
@@ -232,7 +244,7 @@
     const sample = Math.min(80, len);
     for (let i = 0; i < sample; i++) {
       const r = rows[i];
-      const key = r.userId || (r.username ? r.username.toLowerCase() : "");
+      const key = r.creatorCode || r.userId || (r.username ? r.username.toLowerCase() : "");
       head += key + ":" + Math.round(r.totalValue * 100) + ";";
     }
     return len + "|" + head;
@@ -291,10 +303,12 @@
         const li = cards[i];
         const userId = getUserId(li);
         const username = getUsername(li);
+        const creatorCode = getCreatorCode(li);
         rows[i] = {
           li,
           userId,
           username,
+          creatorCode,
           totalValue: getTotalValue(li)
         };
       }
@@ -304,7 +318,7 @@
 
       const groupMap = new Map();
       for (const row of rows) {
-        const groupKey = row.userId || row.username.toLowerCase();
+        const groupKey = row.creatorCode || row.userId || row.username.toLowerCase();
         if (!groupKey) continue;
 
         let g = groupMap.get(groupKey);
@@ -676,9 +690,10 @@
     const groupMap = new Map();
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
+      const creatorCode = getCreatorCode(card);
       const userId = getUserId(card);
       const username = getUsername(card);
-      const key = userId || username.toLowerCase();
+      const key = creatorCode || userId || username.toLowerCase();
       if (!key) continue;
 
       const g = groupMap.get(key);
