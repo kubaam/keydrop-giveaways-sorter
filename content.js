@@ -106,11 +106,54 @@
     return cards;
   }
 
+  const BLACKLISTED_NAMES = [
+    "hurry! it's almost over!",
+    "last chance!"
+  ];
+
   function getUsername(li) {
+    const infoWrapper = li.querySelector("div.flex.min-w-0.flex-col, div.pr-14, div.gap-0\\.5");
+    if (infoWrapper) {
+      const nameEl = infoWrapper.firstElementChild;
+      if (nameEl) {
+        const txt = nameEl.textContent.trim();
+        const lower = txt.toLowerCase();
+        if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
+          return normalizeUsername(txt);
+        }
+      }
+      const candidates = infoWrapper.querySelectorAll("span, p");
+      for (let i = 0; i < candidates.length; i++) {
+        const txt = candidates[i].textContent.trim();
+        const lower = txt.toLowerCase();
+        if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
+          return normalizeUsername(txt);
+        }
+      }
+    }
+
     const strong = li.querySelector("p.truncate.text-xs.font-semibold.text-white");
-    if (strong) return normalizeUsername(strong.textContent);
-    const p = li.querySelector("p.truncate, p.text-xs, p.font-semibold");
-    return p ? normalizeUsername(p.textContent) : "";
+    if (strong) {
+      const txt = strong.textContent.trim();
+      const lower = txt.toLowerCase();
+      if (!BLACKLISTED_NAMES.some(b => lower.includes(b))) {
+        return normalizeUsername(strong.textContent);
+      }
+    }
+
+    const tooltip = li.querySelector("div.pointer-events-none, [class*='pointer-events-none']");
+    const ps = li.querySelectorAll("p.truncate, p.text-xs, p.font-semibold");
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (tooltip && tooltip.contains(p)) continue;
+      const txt = p.textContent.trim();
+      const lower = txt.toLowerCase();
+      if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
+        return normalizeUsername(txt);
+      }
+    }
+
+    return "";
   }
 
   function getTotalValue(li) {
