@@ -108,49 +108,62 @@
 
   const BLACKLISTED_NAMES = [
     "hurry! it's almost over!",
-    "last chance!"
+    "last chance!",
+    "hurry!",
+    "almost over!"
   ];
 
+  function getUserId(li) {
+    const a = li.querySelector("a[href*='/giveaways/user/']");
+    if (a) {
+      const href = a.getAttribute("href") || "";
+      const match = href.match(/\/giveaways\/user\/([^/?#]+)/);
+      if (match) return match[1];
+    }
+    return "";
+  }
+
   function getUsername(li) {
+    const isIgnored = (txt) => {
+      const lower = txt.toLowerCase();
+      return BLACKLISTED_NAMES.some(b => lower.includes(b));
+    };
+
+    // 1. Try to find the username wrapper div that is a sibling of the avatar
     const infoWrapper = li.querySelector("div.flex.min-w-0.flex-col, div.pr-14, div.gap-0\\.5");
     if (infoWrapper) {
-      const nameEl = infoWrapper.firstElementChild;
-      if (nameEl) {
-        const txt = nameEl.textContent.trim();
-        const lower = txt.toLowerCase();
-        if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
-          return normalizeUsername(txt);
-        }
-      }
-      const candidates = infoWrapper.querySelectorAll("span, p");
-      for (let i = 0; i < candidates.length; i++) {
-        const txt = candidates[i].textContent.trim();
-        const lower = txt.toLowerCase();
-        if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
-          return normalizeUsername(txt);
+      const elements = infoWrapper.querySelectorAll("span, p, div");
+      for (let i = 0; i < elements.length; i++) {
+        const txt = elements[i].textContent.trim();
+        if (txt && !txt.toUpperCase().includes("CODE:") && !isIgnored(txt)) {
+          if (txt.length < 50) {
+            return normalizeUsername(txt);
+          }
         }
       }
     }
 
-    const strong = li.querySelector("p.truncate.text-xs.font-semibold.text-white");
-    if (strong) {
-      const txt = strong.textContent.trim();
-      const lower = txt.toLowerCase();
-      if (!BLACKLISTED_NAMES.some(b => lower.includes(b))) {
-        return normalizeUsername(strong.textContent);
-      }
-    }
-
+    // 2. Fallback: Search all text nodes in the card, excluding avatar/tooltips
     const tooltip = li.querySelector("div.pointer-events-none, [class*='pointer-events-none']");
-    const ps = li.querySelectorAll("p.truncate, p.text-xs, p.font-semibold");
-    for (let i = 0; i < ps.length; i++) {
-      const p = ps[i];
-      if (tooltip && tooltip.contains(p)) continue;
-      const txt = p.textContent.trim();
-      const lower = txt.toLowerCase();
-      if (txt && !txt.toUpperCase().includes("CODE:") && !BLACKLISTED_NAMES.some(b => lower.includes(b))) {
-        return normalizeUsername(txt);
+    const candidates = li.querySelectorAll("span, p, div");
+    for (let i = 0; i < candidates.length; i++) {
+      const el = candidates[i];
+      if (tooltip && tooltip.contains(el)) continue;
+
+      const txt = el.textContent.trim();
+      if (txt && !txt.toUpperCase().includes("CODE:") && !isIgnored(txt)) {
+        if (txt.length < 30 && !/deposit|value|chance|joined/i.test(txt)) {
+          return normalizeUsername(txt);
+        }
       }
+    }
+
+    // 3. Last resort fallback: get it from the steam avatar image alt tag if available
+    const img = li.querySelector("img[alt*='avatar'], img[alt*='Key-Drop']");
+    if (img) {
+      const alt = img.getAttribute("alt") || "";
+      const match = alt.match(/^(.*?)'s Key-Drop avatar$/i);
+      if (match) return normalizeUsername(match[1]);
     }
 
     return "";
@@ -207,7 +220,8 @@
     const sample = Math.min(80, len);
     for (let i = 0; i < sample; i++) {
       const r = rows[i];
-      head += r.userKey + ":" + Math.round(r.totalValue * 100) + ";";
+      const key = r.userId || (r.username ? r.username.toLowerCase() : "");
+      head += key + ":" + Math.round(r.totalValue * 100) + ";";
     }
     return len + "|" + head;
   }
@@ -252,14 +266,23 @@
       const parent = resolveListEl(cards);
       if (!parent) return;
 
+      const allChildren = Array.from(parent.children);
+      const others = [];
+      for (const child of allChildren) {
+        if (!cards.includes(child)) {
+          others.push(child);
+        }
+      }
+
       const rows = new Array(cards.length);
       for (let i = 0; i < cards.length; i++) {
         const li = cards[i];
+        const userId = getUserId(li);
         const username = getUsername(li);
         rows[i] = {
           li,
+          userId,
           username,
-          userKey: username.toLowerCase(),
           totalValue: getTotalValue(li)
         };
       }
@@ -269,13 +292,21 @@
 
       const groupMap = new Map();
       for (const row of rows) {
-        let g = groupMap.get(row.userKey);
+        const groupKey = row.userId || row.username.toLowerCase();
+        if (!groupKey) continue;
+
+        let g = groupMap.get(groupKey);
         if (!g) {
-          g = { userKey: row.userKey, username: row.username, count: 0, maxTotalValue: 0, items: [] };
-          groupMap.set(row.userKey, g);
+          g = { groupKey, username: row.username, count: 0, maxTotalValue: 0, items: [] };
+          groupMap.set(groupKey, g);
         }
         g.count++;
         g.items.push(row);
+
+        if (row.username && (!g.username || g.username.length < row.username.length)) {
+          g.username = row.username;
+        }
+
         if (row.totalValue > g.maxTotalValue) g.maxTotalValue = row.totalValue;
       }
 
@@ -286,17 +317,22 @@
       groupArr.sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
         if (b.maxTotalValue !== a.maxTotalValue) return b.maxTotalValue - a.maxTotalValue;
-        return a.userKey.localeCompare(b.userKey, undefined, { numeric: true, sensitivity: "base" });
+        return a.groupKey.localeCompare(b.groupKey, undefined, { numeric: true, sensitivity: "base" });
       });
 
       const ordered = [];
-      for (const g of groupArr) for (const it of g.items) ordered.push(it.li);
+      for (const g of groupArr) {
+        for (const it of g.items) {
+          ordered.push(it.li);
+        }
+      }
 
-      // Pause the list observer during reorder so our own writes don't reschedule us.
+      const finalOrder = [...ordered, ...others];
+
       const obs = state.listObserver;
       if (obs) obs.disconnect();
-      reorderInPlace(parent, ordered);
-      if (obs && state.autoSort) obs.observe(parent, { childList: true });
+      reorderInPlace(parent, finalOrder);
+      if (obs && state.autoSort) obs.observe(parent, { childList: true, subtree: true });
 
       state.lastSortSignature = nextSig;
       state.lastSortAt = Date.now();
@@ -627,11 +663,21 @@
     const cards = getCards();
     const groupMap = new Map();
     for (let i = 0; i < cards.length; i++) {
-      const username = getUsername(cards[i]);
-      const key = username.toLowerCase();
+      const card = cards[i];
+      const userId = getUserId(card);
+      const username = getUsername(card);
+      const key = userId || username.toLowerCase();
+      if (!key) continue;
+
       const g = groupMap.get(key);
-      if (g) g.count++;
-      else groupMap.set(key, { username, count: 1 });
+      if (g) {
+        g.count++;
+        if (username && (!g.username || g.username.length < username.length)) {
+          g.username = username;
+        }
+      } else {
+        groupMap.set(key, { username, count: 1 });
+      }
     }
     let topUser = "";
     let topUserCount = 0;
