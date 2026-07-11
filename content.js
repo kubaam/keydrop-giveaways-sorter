@@ -135,6 +135,23 @@
     return "";
   }
 
+  function getTimeLeftSeconds(li) {
+    const txt = (li.textContent || "").trim();
+    const daysMatch = txt.match(/(\d+)\s*days?/i);
+    const hrMatch = txt.match(/(\d+)\s*hr/i);
+    const minMatch = txt.match(/(\d+)\s*min/i);
+    const secMatch = txt.match(/(\d+)\s*sec/i);
+    if (daysMatch || hrMatch || minMatch || secMatch) {
+      let seconds = 0;
+      if (daysMatch) seconds += parseInt(daysMatch[1], 10) * 86400;
+      if (hrMatch) seconds += parseInt(hrMatch[1], 10) * 3600;
+      if (minMatch) seconds += parseInt(minMatch[1], 10) * 60;
+      if (secMatch) seconds += parseInt(secMatch[1], 10);
+      return seconds;
+    }
+    return Infinity;
+  }
+
   function getUsername(li) {
     const isIgnored = (txt) => {
       const lower = txt.toLowerCase();
@@ -309,6 +326,7 @@
           userId,
           username,
           creatorCode,
+          timeLeft: getTimeLeftSeconds(li),
           totalValue: getTotalValue(li)
         };
       }
@@ -338,7 +356,14 @@
 
       const groupArr = Array.from(groupMap.values());
       for (const g of groupArr) {
-        g.items.sort((a, b) => b.totalValue - a.totalValue);
+        g.items.sort((a, b) => {
+          const timeA = a.timeLeft;
+          const timeB = b.timeLeft;
+          if (timeA !== timeB) {
+            return timeA - timeB; // soonest first
+          }
+          return b.totalValue - a.totalValue; // highest value fallback
+        });
       }
       groupArr.sort((a, b) => {
         if (b.count !== a.count) return b.count - a.count;
