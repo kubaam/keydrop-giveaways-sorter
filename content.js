@@ -114,10 +114,10 @@
   ];
 
   function getUserId(li) {
-    const a = li.querySelector("a[href*='/giveaways/user/']");
+    const a = li.querySelector("a[href]") || (li.tagName === "A" ? li : null);
     if (a) {
       const href = a.getAttribute("href") || "";
-      const match = href.match(/\/giveaways\/user\/([^/?#]+)/);
+      const match = href.match(/\/(?:giveaways?\/)?user\/([^/?#]+)/i);
       if (match) return match[1];
     }
     return "";
@@ -129,21 +129,35 @@
       return BLACKLISTED_NAMES.some(b => lower.includes(b));
     };
 
-    // 1. Try to find the username wrapper div that is a sibling of the avatar
-    const infoWrapper = li.querySelector("div.flex.min-w-0.flex-col, div.pr-14, div.gap-0\\.5");
-    if (infoWrapper) {
-      const elements = infoWrapper.querySelectorAll("span, p, div");
-      for (let i = 0; i < elements.length; i++) {
-        const txt = elements[i].textContent.trim();
-        if (txt && !txt.toUpperCase().includes("CODE:") && !isIgnored(txt)) {
-          if (txt.length < 50) {
+    // 1. Try to get the username from the avatar image's alt attribute (most stable)
+    const img = li.querySelector("img[alt*='avatar'], img[alt*='Key-Drop'], img[alt*='Avatar']");
+    if (img) {
+      const alt = img.getAttribute("alt") || "";
+      const match = alt.match(/^(.*?)(?:'s\s+Key-Drop\s+avatar|'s\s+avatar|\s+avatar)?$/i);
+      if (match && match[1].trim()) {
+        const name = normalizeUsername(match[1]);
+        if (name && !name.toUpperCase().includes("CODE:") && !name.toLowerCase().includes("fire")) {
+          return name;
+        }
+      }
+    }
+
+    // 2. Try the header's first child inside the text container (very stable DOM structure traversal)
+    const header = li.querySelector("div.flex.items-center.gap-3, div.flex.items-center");
+    if (header) {
+      const infoWrapper = header.querySelector("div.flex.min-w-0.flex-col, div.pr-14, div.flex-col") || header.lastElementChild;
+      if (infoWrapper) {
+        const nameEl = infoWrapper.firstElementChild;
+        if (nameEl) {
+          const txt = nameEl.textContent.trim();
+          if (txt && !txt.toUpperCase().includes("CODE:")) {
             return normalizeUsername(txt);
           }
         }
       }
     }
 
-    // 2. Fallback: Search all text nodes in the card, excluding avatar/tooltips
+    // 3. Fallback: Search all paragraphs and spans inside the card, ignoring tooltips/creator codes/labels
     const tooltip = li.querySelector("div.pointer-events-none, [class*='pointer-events-none']");
     const candidates = li.querySelectorAll("span, p, div");
     for (let i = 0; i < candidates.length; i++) {
@@ -151,19 +165,17 @@
       if (tooltip && tooltip.contains(el)) continue;
 
       const txt = el.textContent.trim();
-      if (txt && !txt.toUpperCase().includes("CODE:") && !isIgnored(txt)) {
-        if (txt.length < 30 && !/deposit|value|chance|joined/i.test(txt)) {
-          return normalizeUsername(txt);
+      if (txt && !txt.toUpperCase().includes("CODE:")) {
+        if (txt.length < 30 && !/deposit|value|chance|joined|play|view/i.test(txt)) {
+          // Reject money values like €1.86, $10, etc.
+          if (!/^[$€£]?\s*\d/.test(txt)) {
+            // Reject countdown timers
+            if (!/\d+\s*(days|hr|min|sec)/i.test(txt)) {
+              return normalizeUsername(txt);
+            }
+          }
         }
       }
-    }
-
-    // 3. Last resort fallback: get it from the steam avatar image alt tag if available
-    const img = li.querySelector("img[alt*='avatar'], img[alt*='Key-Drop']");
-    if (img) {
-      const alt = img.getAttribute("alt") || "";
-      const match = alt.match(/^(.*?)'s Key-Drop avatar$/i);
-      if (match) return normalizeUsername(match[1]);
     }
 
     return "";
